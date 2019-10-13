@@ -1,13 +1,13 @@
 from tkinter import Tk
 from tkinter import filedialog
 import tkinter, os
-from ImageManipulator import ImageManipulator
+from ImageFileHandler import ImageFileHandler
 from ImageRestorer import ImageRestorer
 
 class HomeScreen:
 
     def __init__(self):
-        self.image_manipulator = ImageManipulator()
+        self.image_manipulator = ImageFileHandler()
         self.image_restorer = ImageRestorer()
         self.set_up_screen()
 
