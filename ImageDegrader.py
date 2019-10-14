@@ -44,9 +44,9 @@ class ImageDegrader():
         degraded_im = self.degrade(im, degradation_type=deg_type)
         dip.figure()
         dip.subplot(121)
-        dip.imshow(im)
+        dip.imshow(im, cmap="gray")
         dip.subplot(122)
-        dip.imshow(degraded_im)
+        dip.imshow(degraded_im, cmap="gray")
         dip.xlabel("PSNR: {0:.2f}".format(dip.PSNR(im, degraded_im)))
         dip.show()
 
