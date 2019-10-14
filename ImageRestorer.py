@@ -2,6 +2,7 @@ import dippykit as dip
 import numpy as np
 from ImageFileHandler import ImageFileHandler
 from ImageDegrader import ImageDegrader
+import os
 
 
 class ImageRestorer:
@@ -71,6 +72,6 @@ class ImageRestorer:
         dip.show()
 
 if __name__ == "__main__":
-    file = r"C:\Users\mmcbrien\PycharmProjects\DigitalImageProcessingProject\test_images\cameraman.jpeg"
+    file = os.path.join(os.getcwd(), "test_images", "cameraman.jpeg")
     ir = ImageRestorer()
     ir._test_restore_mode(file, deg_type="multiplicative")

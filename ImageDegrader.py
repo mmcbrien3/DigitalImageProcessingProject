@@ -1,6 +1,8 @@
 import dippykit as dip
 import numpy as np
 from ImageFileHandler import ImageFileHandler
+import os
+
 
 class ImageDegrader():
 
@@ -52,7 +54,7 @@ class ImageDegrader():
 
 
 if __name__ == "__main__":
-    file = r"C:\Users\mmcbrien\PycharmProjects\DigitalImageProcessingProject\test_images\cameraman.jpeg"
+    file = os.path.join(os.getcwd(), "test_images", "cameraman.jpeg")
     id = ImageDegrader()
     id._test_noise_mode(file, deg_type="multiplicative")
 
