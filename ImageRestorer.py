@@ -14,7 +14,7 @@ class ImageRestorer:
     def restore(self, image):
         return image
 
-    def fast_multiplicative_restore(self, degraded_image, original_image, h_param=15):
+    def param_search_multiplicative_restore(self, degraded_image, original_image):
         int_image = dip.float_to_im(degraded_image)
         psnr_max = None
         best_denoise = None
@@ -26,6 +26,11 @@ class ImageRestorer:
                 psnr_max = cur_psnr
         return best_denoise
 
+    def fast_multiplicative_restore(self, degraded_image, h_param=15):
+        int_image = dip.float_to_im(degraded_image)
+
+        return dip.im_to_float(cv2.fastNlMeansDenoising(int_image, h=h_param))
+
     def slow_multiplicative_restore(self, degraded_image):
         h = 15
         s_window_size = 21
@@ -35,8 +40,9 @@ class ImageRestorer:
         scaling_factor = 1 / np.square(2 * f + 1)
         p_min = np.max([p - f, 0])
         q_min = np.max([q - f, 0])
-        p_max = np.min([p + f, ])
-        im_p_vec =
+        p_max = np.min([p + f, np.shape[0]])
+        im_p_vec = 0
+        pass
 
     def calc_weights(self, d_squared, sigma_squared, h):
         max_val = np.max([d_squared - 2*sigma_squared, 0.0])
@@ -48,7 +54,7 @@ class ImageRestorer:
         im_degrader = ImageDegrader()
         im = fh.open_image_file_as_matrix(file)
         degraded_im = im_degrader.degrade(im, degradation_type=deg_type)
-        restored_im = self.fast_multiplicative_restore(degraded_im, im)
+        restored_im = self.fast_multiplicative_restore(degraded_im)
         dip.figure()
         dip.subplot(131)
         dip.imshow(im, cmap="gray")
