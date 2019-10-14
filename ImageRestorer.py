@@ -3,7 +3,8 @@ import numpy as np
 from ImageFileHandler import ImageFileHandler
 from ImageDegrader import ImageDegrader
 import os
-
+from sklearn import preprocessing
+import cv2
 
 class ImageRestorer:
 
@@ -13,53 +14,41 @@ class ImageRestorer:
     def restore(self, image):
         return image
 
-    def AA_multiplicative_restore(self, image):
+    def fast_multiplicative_restore(self, degraded_image, original_image, h_param=15):
+        int_image = dip.float_to_im(degraded_image)
+        psnr_max = None
+        best_denoise = None
+        for i in range(1, 25):
+            cur_denoised = dip.im_to_float(cv2.fastNlMeansDenoising(int_image, h=i, searchWindowSize=31))
+            cur_psnr = dip.PSNR(original_image, cur_denoised)
+            if psnr_max is None or cur_psnr > psnr_max:
+                best_denoise = cur_denoised
+                psnr_max = cur_psnr
+        return best_denoise
 
-        lambda_param = 1000
-        beta = 0.0000001
-        dt = 1
-        u_old = 0
-        u_current = image
-        epsilon = 0.001
-        diff = 99
-        iter = 0
-        max_iter = 200
-        while np.abs(diff) > epsilon and iter < max_iter:
-            u_old = np.copy(u_current)
-            div_func = self.AA_divergence_func(u_old, beta)
-            h_func = self.AA_h_func(image, u_old)
-            u_current = div_func + lambda_param * h_func + u_old
-            diff = np.sum(np.subtract(u_current, u_old))
-            iter += 1
-        print("Ran {} iterations".format(iter))
-        return self.normalize(u_current)
+    def slow_multiplicative_restore(self, degraded_image):
+        h = 15
+        s_window_size = 21
+        t_window_size = 7
 
-    def divergence(self, f):
-        gradient = np.gradient(f)
-        return gradient[0] + gradient[1]
+    def calc_d_squared(self, im, p, q, f):
+        scaling_factor = 1 / np.square(2 * f + 1)
+        p_min = np.max([p - f, 0])
+        q_min = np.max([q - f, 0])
+        p_max = np.min([p + f, ])
+        im_p_vec =
 
-    def normalize(self, v):
-        norm = np.linalg.norm(v, ord=1)
-        if norm == 0:
-            norm = np.finfo(v.dtype).eps
-        return v / norm
+    def calc_weights(self, d_squared, sigma_squared, h):
+        max_val = np.max([d_squared - 2*sigma_squared, 0.0])
+        return np.exp(-max_val / np.square(h))
 
-    def AA_h_func(self, f, u):
-        return np.divide(np.subtract(f, u), (np.square(u) + 0.00001))
-
-    def AA_divergence_func(self, u, beta):
-        u_gradient = np.gradient(u)
-        full_gradient = np.sqrt(u_gradient[0] ** 2 + u_gradient[1] ** 2)
-        gradient_squared = np.square(np.abs(full_gradient))
-        div = full_gradient / np.sqrt(gradient_squared + beta**2)
-        return self.divergence(div)
 
     def _test_restore_mode(self, file, deg_type):
         fh = ImageFileHandler()
         im_degrader = ImageDegrader()
         im = fh.open_image_file_as_matrix(file)
         degraded_im = im_degrader.degrade(im, degradation_type=deg_type)
-        restored_im = self.AA_multiplicative_restore(degraded_im)
+        restored_im = self.fast_multiplicative_restore(degraded_im, im)
         dip.figure()
         dip.subplot(131)
         dip.imshow(im, cmap="gray")
@@ -68,7 +57,7 @@ class ImageRestorer:
         dip.xlabel("PSNR: {0:.2f}".format(dip.PSNR(im, degraded_im)))
         dip.subplot(133)
         dip.imshow(restored_im, cmap="gray")
-        dip.xlabel("PSNR: {0:.2f}".format(dip.PSNR(im, restored_im, max_signal_value=np.max(restored_im))))
+        dip.xlabel("PSNR: {0:.2f}".format(dip.PSNR(im, restored_im)))
         dip.show()
 
 if __name__ == "__main__":
