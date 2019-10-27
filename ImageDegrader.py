@@ -26,7 +26,7 @@ class ImageDegrader():
     def add_additive_noise(self, image):
         pass
 
-    def add_multiplicative_noise(self, image, mean=0.0, var=0.001, clip=True):
+    def add_multiplicative_noise(self, image, mean=0.0, var=0.1, clip=True):
 
         low_clip = 0
         if image.min() < 0:
