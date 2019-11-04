@@ -3,6 +3,7 @@ import numpy as np
 from ImageFileHandler import ImageFileHandler
 from ImageDegrader import ImageDegrader
 import os
+from ClusteringHandler import ClusteringHandler
 from sklearn import preprocessing
 import cv2
 
@@ -31,19 +32,19 @@ class ImageRestorer:
         int_image = dip.float_to_im(degraded_image)
         return dip.im_to_float(cv2.fastNlMeansDenoising(int_image, h=h_param, searchWindowSize=search_window_size))
 
-    def multiplicative_statistical_restore(self, degraged_image):
+    def multiplicative_statistical_restore(self, degraded_image):
         block_size = 32
-        blocks = self.break_image_into_blocks(degraged_image, block_size)
+        blocks = self.break_image_into_blocks(degraded_image, block_size)
         variances = self.get_variances_of_blocks(blocks)
 
-        output_image = np.zeros(degraged_image.shape)
+        output_image = np.zeros(degraded_image.shape)
 
         h_params = [35, 35, 30, 22]
         window_sizes = [41 for i in range(4)]
         count = 0
         h_params.reverse()
-        for m in range(0, degraged_image.shape[0], block_size):
-            for n in range(0, degraged_image.shape[1], block_size):
+        for m in range(0, degraded_image.shape[0], block_size):
+            for n in range(0, degraded_image.shape[1], block_size):
 
                 cur_percentile = 0
                 if variances[count] > np.percentile(variances, 25):
@@ -53,7 +54,7 @@ class ImageRestorer:
                 if variances[count] > np.percentile(variances, 90):
                     cur_percentile = 3
 
-                cur_block = self.create_surrounding_block((m, n), degraged_image, block_size)
+                cur_block = self.create_surrounding_block((m, n), degraded_image, block_size)
 
                 output_image[m:m+block_size, n:n+block_size] = self.fast_multiplicative_restore(
                     cur_block,
@@ -62,6 +63,50 @@ class ImageRestorer:
                 )[block_size:block_size*2, block_size:block_size*2]
                 count += 1
         return output_image
+
+    def multiplicative_clustering_restore(self, degraded_image):
+        block_size = 16
+
+        min_h_value = 10
+        max_h_value = 30
+
+        blocks = self.break_image_into_blocks(degraded_image, block_size)
+        variances = self.get_variances_of_blocks(blocks)
+        means = self.get_means_of_blocks(blocks)
+
+        data = []
+        for i in range(len(blocks)):
+            data.append([means[i], variances[i]])
+
+        output_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1]])
+        ch = ClusteringHandler(data)
+        ch.cluster_data()
+        clustered_labels = ch.labels
+        print(clustered_labels)
+
+        h_params = np.linspace(max_h_value, min_h_value, ch.num_clusters)
+        window_sizes = [41 for i in range(4)]
+        count = 0
+        for m in range(0, degraded_image.shape[0], block_size):
+            for n in range(0, degraded_image.shape[1], block_size):
+
+                cur_percentile = clustered_labels[m//block_size*(degraded_image.shape[0]//block_size)+(n//block_size)]
+
+                cur_block = self.create_surrounding_block((m, n), degraded_image, block_size)
+
+                # output_image[m:m + block_size, n:n + block_size, :] = 0
+                # if cur_percentile == 0:
+                #     x = 3
+                # output_image[m:m + block_size, n:n + block_size, cur_percentile] = 1
+
+                output_image[m:m + block_size, n:n + block_size] = self.fast_multiplicative_restore(
+                    cur_block,
+                    h_param=h_params[cur_percentile],
+                    search_window_size=window_sizes[cur_percentile]
+                )[block_size:block_size * 2, block_size:block_size * 2]
+                count += 1
+        return output_image
+
 
     def create_surrounding_block(self, origin_index, image, block_size):
         output = np.zeros((block_size*3, block_size*3))
@@ -89,11 +134,19 @@ class ImageRestorer:
 
         return blocks
 
-    def get_variances_of_blocks(self, blocks):
-        variances = []
+    def get_statistic_of_blocks(self, blocks, statistics_function):
+        stats = []
         for b in blocks:
-            variances.append(np.var(b))
-        return variances
+            stats.append(statistics_function(b))
+        return stats
+
+
+    def get_variances_of_blocks(self, blocks):
+        return self.get_statistic_of_blocks(blocks, np.var)
+
+    def get_means_of_blocks(self, blocks):
+        return self.get_statistic_of_blocks(blocks, np.mean)
+
 
     def slow_multiplicative_restore(self, degraded_image):
         h = 15
@@ -117,7 +170,7 @@ class ImageRestorer:
         im_degrader = ImageDegrader()
         im = fh.open_image_file_as_matrix(file)
         degraded_im = im_degrader.degrade(im, degradation_type=deg_type)
-        restored_im = self.multiplicative_statistical_restore(degraded_im)
+        restored_im = self.multiplicative_clustering_restore(degraded_im)
         dip.figure()
         dip.subplot(131)
         dip.imshow(im, cmap="gray")
