@@ -65,7 +65,7 @@ class ImageRestorer:
         return output_image
 
     def multiplicative_clustering_restore(self, degraded_image):
-        block_size = 16
+        block_size = 8
 
         min_h_value = 10
         max_h_value = 30
@@ -79,14 +79,25 @@ class ImageRestorer:
             data.append([means[i], variances[i]])
 
         output_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1]])
+        color_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1], 3])
         ch = ClusteringHandler(data)
         ch.cluster_data()
         clustered_labels = ch.labels
         print(clustered_labels)
+        cluster_centers = np.asarray(ch.cluster_centers)
 
-        h_params = np.linspace(max_h_value, min_h_value, ch.num_clusters)
-        window_sizes = [41 for i in range(4)]
+        mean_centers = cluster_centers[:, 0]
+        var_centers = cluster_centers[:, 1]
+
+        h_params = np.linspace(max_h_value, max_h_value, ch.num_clusters)
+        window_sizes = [21 for i in range(ch.num_clusters)]
         count = 0
+
+        h_params = [a for _, a in sorted(zip(var_centers, h_params), reverse=True)]
+        h_params = h_params * mean_centers * 29.5
+
+        print("H Parameters that will be used: {}".format(h_params))
+
         for m in range(0, degraded_image.shape[0], block_size):
             for n in range(0, degraded_image.shape[1], block_size):
 
@@ -94,10 +105,8 @@ class ImageRestorer:
 
                 cur_block = self.create_surrounding_block((m, n), degraded_image, block_size)
 
-                # output_image[m:m + block_size, n:n + block_size, :] = 0
-                # if cur_percentile == 0:
-                #     x = 3
-                # output_image[m:m + block_size, n:n + block_size, cur_percentile] = 1
+                color_image[m:m + block_size, n:n + block_size, :] = 0
+                color_image[m:m + block_size, n:n + block_size, cur_percentile] = 1
 
                 output_image[m:m + block_size, n:n + block_size] = self.fast_multiplicative_restore(
                     cur_block,
@@ -105,6 +114,10 @@ class ImageRestorer:
                     search_window_size=window_sizes[cur_percentile]
                 )[block_size:block_size * 2, block_size:block_size * 2]
                 count += 1
+        dip.figure()
+        dip.imshow(color_image)
+        dip.figure()
+        dip.imshow(np.real(dip.fftshift(dip.fft2(degraded_image))))
         return output_image
 
 

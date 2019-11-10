@@ -14,6 +14,7 @@ class ClusteringHandler():
         self.min_clusters = min_clusters
         self.max_clusters = max_clusters
         self.num_clusters = None
+        self.cluster_centers = None
 
     def cluster_data(self, method='k_means'):
         if method == "k_means":
@@ -36,6 +37,7 @@ class ClusteringHandler():
                 best_result = current_result
                 self.num_clusters = i
                 self.labels = best_result.labels_
+                self.cluster_centers = best_result.cluster_centers_
 
     def score_clustering(self, labels):
         return sk_metrics.silhouette_score(self.data, labels)
