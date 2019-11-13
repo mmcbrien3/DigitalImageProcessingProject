@@ -9,14 +9,14 @@ class ImageDegrader():
     def __init__(self):
         pass
 
-    def degrade(self, image, degradation_type="gaussian"):
+    def degrade(self, image, degradation_type="gaussian", severity_value=0.05):
 
         if degradation_type.lower() == "gaussian":
             return self.add_gaussian_noise(image)
         elif degradation_type.lower() == "additive":
             return self.add_additive_noise(image)
         elif degradation_type.lower() == "multiplicative":
-            return self.add_multiplicative_noise(image)
+            return self.add_multiplicative_noise(image, var=severity_value)
         else:
             raise Exception("{} is not a valid degradation type.".format(degradation_type))
 

@@ -8,6 +8,7 @@ from sklearn import preprocessing
 import cv2
 import scipy.ndimage as ndimage
 import scipy.signal as signal
+import matplotlib.pyplot as plt
 
 class ImageRestorer:
 
@@ -66,7 +67,7 @@ class ImageRestorer:
         return output_image
 
     def multiplicative_clustering_restore(self, degraded_image):
-        block_size = 8
+        block_size = 16
 
         min_h_value = 10
         max_h_value = 40
@@ -95,7 +96,7 @@ class ImageRestorer:
         count = 0
 
         h_params = [a for _, a in sorted(zip(var_centers, h_params), reverse=True)]
-        h_params = h_params * mean_centers * 29.5
+        h_params = h_params * mean_centers ** (1/2) * 7
 
         print("H Parameters that will be used: {}".format(h_params))
 
@@ -114,14 +115,12 @@ class ImageRestorer:
                     search_window_size=window_sizes[cur_percentile]
                 )[block_size:block_size * 2, block_size:block_size * 2]
                 count += 1
-        dip.figure()
-        dip.imshow(cluster_image)
         blurred_borders_image = self.blur_borders(output_image, cluster_image)
-        return blurred_borders_image
+        return blurred_borders_image, cluster_image
 
 
     def blur_borders(self, image, cluster_image):
-        kernel_size = 5
+        kernel_size = 7
         pad_size = kernel_size // 2 + 1
         kernel_maker_array = np.zeros((kernel_size,kernel_size))
         kernel_maker_array[1, 1] = 1
@@ -202,12 +201,18 @@ class ImageRestorer:
         max_val = np.max([d_squared - 2*sigma_squared, 0.0])
         return np.exp(-max_val / np.square(h))
 
-    def _test_restore_mode(self, file, deg_type):
+    def _test_restore_mode(self, file, deg_type, save_images=False, name=None):
         fh = ImageFileHandler()
         im_degrader = ImageDegrader()
         im = fh.open_image_file_as_matrix(file)
         degraded_im = im_degrader.degrade(im, degradation_type=deg_type)
-        restored_im = self.multiplicative_clustering_restore(degraded_im)
+        restored_im, clustered_im = self.multiplicative_clustering_restore(degraded_im)
+
+        if save_images:
+            dip.im_write(dip.float_to_im(degraded_im), "./"+name+"_degraded_image.jpg", quality=95)
+            dip.im_write(dip.float_to_im(restored_im), "./"+name+"_restored_image.jpg", quality=95)
+            dip.im_write(dip.float_to_im(clustered_im), "./"+name+"_clustered_image.jpg", quality=96)
+
         dip.figure()
         dip.subplot(131)
         dip.imshow(im, cmap="gray")
@@ -219,7 +224,29 @@ class ImageRestorer:
         dip.xlabel("PSNR: {0:.2f}".format(dip.PSNR(im, restored_im)))
         dip.show()
 
+    def _plot_psnr_against_var(self, image, deg_type):
+        fh = ImageFileHandler()
+        im_degrader = ImageDegrader()
+        im = fh.open_image_file_as_matrix(file)
+        vars = np.linspace(0.01, 0.3, 20)
+        restored_psnrs = []
+        degraded_psnrs = []
+        count = 0
+        for var in vars:
+            degraded_im = im_degrader.degrade(im, degradation_type=deg_type, severity_value=var)
+            restored_im, _ = self.multiplicative_clustering_restore(degraded_im)
+            degraded_psnrs.append(dip.PSNR(im, degraded_im))
+            restored_psnrs.append(dip.PSNR(im, restored_im))
+            count += 1
+            print("{} out of {} complete".format(count, len(vars)))
+        plt.plot(vars, restored_psnrs, "b")
+        plt.plot(vars, degraded_psnrs, "r")
+        plt.plot(vars, np.subtract(restored_psnrs, degraded_psnrs), "k")
+
+        plt.show()
+
 if __name__ == "__main__":
-    file = os.path.join(os.getcwd(), "test_images", "cameraman.jpeg")
+    file = os.path.join(os.getcwd(), "test_images", "dione.jpg")
     ir = ImageRestorer()
-    ir._test_restore_mode(file, deg_type="multiplicative")
+    #ir._test_restore_mode(file, deg_type="multiplicative", save_images=True, name="dione")
+    ir._plot_psnr_against_var(file, deg_type="multiplicative")
