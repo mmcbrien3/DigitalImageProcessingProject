@@ -6,7 +6,8 @@ import os
 from ClusteringHandler import ClusteringHandler
 from sklearn import preprocessing
 import cv2
-
+import scipy.ndimage as ndimage
+import scipy.signal as signal
 
 class ImageRestorer:
 
@@ -68,7 +69,7 @@ class ImageRestorer:
         block_size = 8
 
         min_h_value = 10
-        max_h_value = 30
+        max_h_value = 40
 
         blocks = self.break_image_into_blocks(degraded_image, block_size)
         variances = self.get_variances_of_blocks(blocks)
@@ -79,7 +80,7 @@ class ImageRestorer:
             data.append([means[i], variances[i]])
 
         output_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1]])
-        color_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1], 3])
+        cluster_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1]])
         ch = ClusteringHandler(data)
         ch.cluster_data()
         clustered_labels = ch.labels
@@ -105,8 +106,7 @@ class ImageRestorer:
 
                 cur_block = self.create_surrounding_block((m, n), degraded_image, block_size)
 
-                color_image[m:m + block_size, n:n + block_size, :] = 0
-                color_image[m:m + block_size, n:n + block_size, cur_percentile] = 1
+                cluster_image[m:m + block_size, n:n + block_size] = cur_percentile / ch.num_clusters
 
                 output_image[m:m + block_size, n:n + block_size] = self.fast_multiplicative_restore(
                     cur_block,
@@ -115,10 +115,31 @@ class ImageRestorer:
                 )[block_size:block_size * 2, block_size:block_size * 2]
                 count += 1
         dip.figure()
-        dip.imshow(color_image)
-        dip.figure()
-        dip.imshow(np.real(dip.fftshift(dip.fft2(degraded_image))))
-        return output_image
+        dip.imshow(cluster_image)
+        blurred_borders_image = self.blur_borders(output_image, cluster_image)
+        return blurred_borders_image
+
+
+    def blur_borders(self, image, cluster_image):
+        kernel_size = 5
+        pad_size = kernel_size // 2 + 1
+        kernel_maker_array = np.zeros((kernel_size,kernel_size))
+        kernel_maker_array[1, 1] = 1
+
+        kernel = ndimage.filters.gaussian_filter(kernel_maker_array, 1)
+        padded_image = np.pad(image, (pad_size, pad_size), mode='symmetric')
+        padded_cluster_image = np.pad(cluster_image, (pad_size, pad_size), mode='symmetric')
+        blurred_image = np.zeros_like(image)
+        for m in range(pad_size, image.shape[0]+pad_size):
+            for n in range(pad_size, image.shape[1]+pad_size):
+                surrounding_box = padded_cluster_image[m-pad_size+1:m+pad_size, n-pad_size+1:n+pad_size]
+                if np.all(surrounding_box==surrounding_box[0, 0]):
+                    blurred_image[m-pad_size, n-pad_size] = padded_image[m, n]
+                else:
+                    image_box = padded_image[m-pad_size+1:m+pad_size, n-pad_size+1:n+pad_size]
+                    convolved_image = signal.convolve2d(kernel, image_box)
+                    blurred_image[m-pad_size, n-pad_size] = convolved_image[pad_size, pad_size]
+        return blurred_image
 
 
     def create_surrounding_block(self, origin_index, image, block_size):
@@ -129,7 +150,10 @@ class ImageRestorer:
 
         new_origin = (origin_index[0] + image.shape[0], origin_index[1] + image.shape[1])
 
-        output = extended_image[new_origin[0] - block_size:new_origin[0] + 2*block_size, new_origin[1] - block_size:new_origin[1] + 2*block_size]
+        output = extended_image[
+                 new_origin[0] - block_size:new_origin[0] + 2*block_size,
+                 new_origin[1] - block_size:new_origin[1] + 2*block_size
+                 ]
 
         return output
 
