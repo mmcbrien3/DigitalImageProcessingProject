@@ -1,5 +1,6 @@
 import dippykit
 import sklearn.cluster as sk_cluster
+import sklearn.mixture as sk_mixture
 import sklearn.metrics as sk_metrics
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,9 +8,9 @@ import numpy as np
 
 class ClusteringHandler():
 
-    def __init__(self, data, labels=None, min_clusters=2, max_clusters=10):
+    def __init__(self, data, labels=None, min_clusters=2, max_clusters=5):
         self.data = np.asarray(data)
-        self.data.sort()
+        #self.data.sort()
         self.labels = labels
         self.min_clusters = min_clusters
         self.max_clusters = max_clusters
