@@ -12,6 +12,7 @@ import cv2
 import scipy.ndimage as ndimage
 import scipy.signal as signal
 import matplotlib.pyplot as plt
+from multiprocessing import Process, Manager
 
 class ImageRestorer:
 
@@ -91,6 +92,7 @@ class ImageRestorer:
 
         output_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1]])
         cluster_image = np.zeros([degraded_image.shape[0], degraded_image.shape[1]])
+        h_param_image = np.zeros(degraded_image.shape)
         ch = ClusteringHandler(data)
         ch.cluster_data()
         clustered_labels = ch.labels
@@ -115,75 +117,102 @@ class ImageRestorer:
         print("MEAN CENTERS: {}".format(0))
         print("H Parameters that will be used: {}".format(h_params))
 
-        for c in range(ch.num_clusters):
-            cur_block = self.create_surrounding_block_fast(degraded_image)
+        for m in range(0, degraded_image.shape[0], block_size):
+            for n in range(0, degraded_image.shape[1], block_size):
+                cur_percentile = clustered_labels[
+                    m // block_size * (degraded_image.shape[0] // block_size) + (n // block_size)]
+                cluster_image[m:m + block_size, n:n + block_size] = cur_percentile / ch.num_clusters
+                h_param_image[m:m + block_size, n:n + block_size] = h_params[cur_percentile]
+
+        h_param_image = self.blur_borders(h_param_image, cluster_image)
+        print("number of h params to be used: {}".format(np.size(np.unique(h_param_image.flatten()))))
+
+        h_param_count = 0
+        all_temp_outputs = []
+        h_param_list = np.unique(h_param_image.flatten())
+
+        processes = []
+        manager = Manager()
+        return_dict = manager.dict()
+        blocked_pad_size = 32
+        blocked_image = self.create_surrounding_block_fast(degraded_image, pad_width=blocked_pad_size)
+
+        process_count = 0
+        for c in h_param_list:
             temp_output_image = self.fast_multiplicative_restore(
-                    cur_block,
-                    h_param=h_params[c],
-                    search_window_size=window_sizes[c]
-                )
+                blocked_image,
+                h_param=c,
+                search_window_size=21
+            )[blocked_pad_size:degraded_image.shape[0]+blocked_pad_size, blocked_pad_size:degraded_image.shape[1]+blocked_pad_size]
+            return_dict[c] = temp_output_image
+            h_param_count += 1
+            print("{} h param finished.".format(h_param_count))
+        print('finished restores')
 
-            for m in range(0, degraded_image.shape[0], block_size):
-                for n in range(0, degraded_image.shape[1], block_size):
-                    cur_percentile = clustered_labels[
-                        m // block_size * (degraded_image.shape[0] // block_size) + (n // block_size)]
-                    if cur_percentile == c:
-                        cluster_image[m:m + block_size, n:n + block_size] = cur_percentile / ch.num_clusters
 
-                        output_image[m:m + block_size, n:n + block_size] = temp_output_image[m+output_image.shape[0]:
-                                                                           m+output_image.shape[0]+block_size,
-                                                                           n+output_image.shape[1]:
-                                                                           n+output_image.shape[1]+block_size]
+        print(return_dict.keys())
+        output_image = output_image.flatten()
+        h_param_image = h_param_image.flatten()
+        for cur_param in return_dict.keys():
+            idx = h_param_image == cur_param
+            return_dict[cur_param] = return_dict[cur_param].flatten()
+            output_image[idx] = return_dict[cur_param][idx]
+        return dip.im_to_float(dip.float_to_im(output_image.reshape(degraded_image.shape))), cluster_image, h_params
 
-        blurred_borders_image = self.blur_borders(output_image, cluster_image)
 
-        sharpened_image = np.zeros_like(blurred_borders_image)
-        return dip.im_to_float(dip.float_to_im(blurred_borders_image)), cluster_image, h_params
-        # for m in range(0, degraded_image.shape[0], block_size):
-        #     for n in range(0, degraded_image.shape[1], block_size):
-        #         cur_block = blurred_borders_image[m:m+block_size, n:n+block_size]
-        #         cur_percentile = clustered_labels[
-        #             m // block_size * (degraded_image.shape[0] // block_size) + (n // block_size)]
-        #         low_percentile = np.percentile(cur_block.flatten(), 35)
-        #         high_percentile = np.percentile(cur_block.flatten(), 65)
-        #         diff = high_percentile - low_percentile
-        #         if h_params[cur_percentile] > 41:
-        #             kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-        #             sharpened_image[m:m+block_size, n:n+block_size] = cv2.filter2D(cur_block, -1, kernel)
-        #         else:
-        #             sharpened_image[m:m + block_size, n:n + block_size] = blurred_borders_image[m:m + block_size, n:n + block_size]
-        #
-        # return dip.im_to_float(dip.float_to_im(sharpened_image)), cluster_image, h_params
+    def perform_single_h_param(self, cur_block, h, index, output_array):
+        temp_output_image = self.fast_multiplicative_restore(
+            cur_block,
+            h_param=h,
+            search_window_size=21
+        )
+        output_array[h] = temp_output_image
 
+        print("Finished single h param")
 
     def blur_borders(self, image, cluster_image):
-        kernel_size = 7
-        pad_size = kernel_size // 2 + 1
-        kernel_maker_array = np.zeros((kernel_size,kernel_size))
-        kernel_maker_array[1, 1] = 1
+        min_h_param = np.min(image)
+        max_h_param = np.max(image)
+        num_h_params = np.size(np.unique(cluster_image.flatten()))*3
+        kernel_size = 41
 
-        kernel = ndimage.filters.gaussian_filter(kernel_maker_array, 1)
-        padded_image = np.pad(image, (pad_size, pad_size), mode='symmetric')
-        padded_cluster_image = np.pad(cluster_image, (pad_size, pad_size), mode='symmetric')
-        blurred_image = np.zeros_like(image)
-        for m in range(pad_size, image.shape[0]+pad_size):
-            for n in range(pad_size, image.shape[1]+pad_size):
-                surrounding_box = padded_cluster_image[m-pad_size+1:m+pad_size, n-pad_size+1:n+pad_size]
-                if np.all(surrounding_box==surrounding_box[0, 0]):
-                    blurred_image[m-pad_size, n-pad_size] = padded_image[m, n]
-                else:
-                    image_box = padded_image[m-pad_size+1:m+pad_size, n-pad_size+1:n+pad_size]
-                    convolved_image = signal.convolve2d(kernel, image_box)
-                    blurred_image[m-pad_size, n-pad_size] = convolved_image[pad_size, pad_size]
-        return blurred_image
+        blurred_image = cv2.GaussianBlur(image, ksize=(kernel_size, kernel_size), sigmaX=0)
+        quantized_image = np.zeros_like(image)
+        quantize_values = np.linspace(min_h_param, max_h_param, num_h_params)
+        known_quantized = {}
+        for m in range(blurred_image.shape[0]):
+            for n in range(blurred_image.shape[1]):
+
+                best_dist = np.inf
+                best_val = -1
+                cur_dist = -1
+                prev_dist = np.inf
+                cur_val = blurred_image[m, n]
+                if cur_val in known_quantized.keys():
+                    quantized_image[m, n] = known_quantized[cur_val]
+                    continue
+                for q in quantize_values:
+                    cur_dist = np.abs(cur_val - q)
+
+                    if cur_dist < best_dist:
+                        best_dist = cur_dist
+                        best_val = q
+                    if cur_dist > prev_dist:
+                        break
+                    prev_dist = cur_dist
+
+                if cur_val not in known_quantized.keys():
+                    known_quantized[cur_val] = best_val
+                quantized_image[m, n] = best_val
+        return quantized_image
 
 
-    def create_surrounding_block_fast(self, image):
+    def create_surrounding_block_fast(self, image, pad_width=32):
 
         extended_image = np.concatenate((image, image, image), axis=1)
         extended_image = np.concatenate((extended_image, extended_image, extended_image), axis=0)
 
-        return extended_image
+        return extended_image[image.shape[0]-pad_width:image.shape[0]*2+pad_width, image.shape[1]-pad_width:image.shape[1]*2+pad_width]
 
     def create_surrounding_block(self, origin_index, image, block_size):
         output = np.zeros((block_size*3, block_size*3))
@@ -304,5 +333,5 @@ if __name__ == "__main__":
 
     file = os.path.join(os.getcwd(), "test_images", "tennis.jpg")
     ir = ImageRestorer()
-    ir._test_restore_mode(file, deg_type="multiplicative", save_images=True, name="lena")
-    #ir._plot_psnr_against_var(file, deg_type="multiplicative")
+    #ir._test_restore_mode(file, deg_type="multiplicative", save_images=True, name="lena")
+    ir._plot_psnr_against_var(file, deg_type="multiplicative")
