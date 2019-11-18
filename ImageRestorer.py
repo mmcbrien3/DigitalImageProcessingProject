@@ -77,16 +77,15 @@ class ImageRestorer:
 
         blocks = self.break_image_into_blocks(degraded_image, block_size)
         variances = self.get_variances_of_blocks(blocks)
-        third_moments = self.get_statistic_of_blocks(blocks, lambda b: sci_stats.moment(b.flatten(), moment=3))
         medians = self.get_statistic_of_blocks(blocks, np.median)
         means = self.get_means_of_blocks(blocks)
-        maxs = self.get_statistic_of_blocks(blocks, lambda b: np.percentile(b, 55))
-        mins = self.get_statistic_of_blocks(blocks, lambda b: np.percentile(b, 45))
+        maxs = self.get_statistic_of_blocks(blocks, lambda b: np.percentile(b, 80))
+        mins = self.get_statistic_of_blocks(blocks, lambda b: np.percentile(b, 20))
 
         scaler = preprocessing.StandardScaler()
         data = []
         for i in range(len(blocks)):
-            data.append([variances[i], means[i], medians[i], maxs[i], mins[i]])
+            data.append([variances[i], means[i], medians[i], maxs[i]*1.1, mins[i]*1.1])
 
         scaler.fit(data)
 
@@ -101,17 +100,18 @@ class ImageRestorer:
         print(cluster_centers)
 
         print(cluster_centers)
-        max_c = cluster_centers[:, 3]
-        min_c = cluster_centers[:, 4]
+        diff_c = cluster_centers[:, 3] - cluster_centers[:, 4]
         mean_c = cluster_centers[:, 1]
         var_centers = cluster_centers[:, 0]
+        average_var = np.mean(var_centers)
 
         h_params = np.linspace(max_h_value, max_h_value, ch.num_clusters)
         window_sizes = [21 for i in range(ch.num_clusters)]
         count = 0
 
         h_params = [a for _, a in sorted(zip(var_centers, h_params), reverse=True)]
-        h_params = var_centers * 15000 * mean_c * (max_c - min_c)
+        h_params = 1538.46 * var_centers * ((mean_c+.2) ** .3 - .1) * ((diff_c+.2) ** .3 - .1)
+
 
         print("VAR CENTERS: {}".format(var_centers))
         print("MEAN CENTERS: {}".format(0))
@@ -124,7 +124,10 @@ class ImageRestorer:
                 cluster_image[m:m + block_size, n:n + block_size] = cur_percentile / ch.num_clusters
                 h_param_image[m:m + block_size, n:n + block_size] = h_params[cur_percentile]
 
+        dip.im_write(dip.float_to_im(h_param_image / np.max(h_param_image)), "./unsmoothed_hparams.jpg")
         h_param_image = self.blur_borders(h_param_image, cluster_image)
+        dip.im_write(dip.float_to_im(h_param_image / np.max(h_param_image)), "./smoothed.jpg")
+
         print("number of h params to be used: {}".format(np.size(np.unique(h_param_image.flatten()))))
 
         h_param_count = 0
@@ -172,8 +175,8 @@ class ImageRestorer:
 
     def blur_borders(self, image, cluster_image):
         min_h_param = np.min(image)
-        max_h_param = np.max(image)
-        num_h_params = np.size(np.unique(cluster_image.flatten()))*3
+        max_h_param = np.min([np.max(image), 90])
+        num_h_params = np.size(np.unique(cluster_image.flatten()))*4
         kernel_size = 41
 
         blurred_image = cv2.GaussianBlur(image, ksize=(kernel_size, kernel_size), sigmaX=0)
@@ -283,22 +286,25 @@ class ImageRestorer:
         im_degrader = ImageDegrader()
         im = fh.open_image_file_as_matrix(file)
         degraded_im = im_degrader.degrade(im, degradation_type=deg_type, severity_value=.5)
-        restored_im, clustered_im, _ = self.multiplicative_clustering_restore(degraded_im)
-
+        restored_im, clustered_im, h_params = self.multiplicative_clustering_restore(degraded_im)
+        restored_im_2 = self.fast_multiplicative_restore(degraded_im, h_param=np.mean(h_params), search_window_size=21)
         if save_images:
             dip.im_write(dip.float_to_im(degraded_im), "./"+name+"_degraded_image.jpg", quality=95)
             dip.im_write(dip.float_to_im(restored_im), "./"+name+"_restored_image.jpg", quality=95)
             dip.im_write(dip.float_to_im(clustered_im), "./"+name+"_clustered_image.jpg", quality=95)
 
         dip.figure()
-        dip.subplot(131)
+        dip.subplot(141)
         dip.imshow(im, cmap="gray")
-        dip.subplot(132)
+        dip.subplot(142)
         dip.imshow(degraded_im, cmap="gray")
         dip.xlabel("PSNR: {0:.2f}, SSIM: {1:.2f}".format(dip.PSNR(im, degraded_im), dip.SSIM(im, degraded_im)[0]))
-        dip.subplot(133)
+        dip.subplot(143)
         dip.imshow(restored_im, cmap="gray")
         dip.xlabel("PSNR: {0:.2f}, SSIM: {1:.2f}".format(dip.PSNR(im, restored_im), dip.SSIM(im, restored_im)[0]))
+        dip.subplot(144)
+        dip.imshow(restored_im_2, cmap="gray")
+        dip.xlabel("PSNR: {0:.2f}, SSIM: {1:.2f}".format(dip.PSNR(im, restored_im_2), dip.SSIM(im, restored_im_2)[0]))
         dip.show()
 
     def _plot_psnr_against_var(self, image, deg_type):
@@ -333,5 +339,5 @@ if __name__ == "__main__":
 
     file = os.path.join(os.getcwd(), "test_images", "tennis.jpg")
     ir = ImageRestorer()
-    #ir._test_restore_mode(file, deg_type="multiplicative", save_images=True, name="lena")
-    ir._plot_psnr_against_var(file, deg_type="multiplicative")
+    ir._test_restore_mode(file, deg_type="multiplicative", save_images=True, name="lena")
+    # ir._plot_psnr_against_var(file, deg_type="multiplicative")
