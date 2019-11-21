@@ -57,4 +57,3 @@ if __name__ == "__main__":
     ])
     ch = ClusteringHandler(data)
     ch.cluster_data()
-    print(ch.labels)

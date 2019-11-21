@@ -95,11 +95,8 @@ class ImageRestorer:
         ch = ClusteringHandler(data)
         ch.cluster_data()
         clustered_labels = ch.labels
-        print(clustered_labels)
         cluster_centers = np.asarray(ch.cluster_centers)
-        print(cluster_centers)
 
-        print(cluster_centers)
         diff_c = cluster_centers[:, 2] - cluster_centers[:, 3]
         mean_c = cluster_centers[:, 1]
         median_c = cluster_centers[:, 1]
@@ -114,9 +111,6 @@ class ImageRestorer:
         h_params = var_centers**.5 * diff_c**.55 * 20 * 25 * 23 * 30 * 15 / 30 / 300
 
 
-        print("VAR CENTERS: {}".format(var_centers))
-        print("MEAN CENTERS: {}".format(0))
-        print("H Parameters that will be used: {}".format(h_params))
 
         for m in range(0, degraded_image.shape[0], block_size):
             for n in range(0, degraded_image.shape[1], block_size):
@@ -129,7 +123,6 @@ class ImageRestorer:
         h_param_image = self.blur_borders(h_param_image, cluster_image)
         # dip.im_write(dip.float_to_im(h_param_image / np.max(h_param_image)), "./smoothed.jpg")
 
-        print("number of h params to be used: {}".format(np.size(np.unique(h_param_image.flatten()))))
 
         h_param_count = 0
         all_temp_outputs = []
@@ -150,11 +143,8 @@ class ImageRestorer:
             )[blocked_pad_size:degraded_image.shape[0]+blocked_pad_size, blocked_pad_size:degraded_image.shape[1]+blocked_pad_size]
             return_dict[c] = temp_output_image
             h_param_count += 1
-            print("{} h param finished.".format(h_param_count))
-        print('finished restores')
 
 
-        print(return_dict.keys())
         output_image = output_image.flatten()
         h_param_image = h_param_image.flatten()
         for cur_param in return_dict.keys():
@@ -172,7 +162,6 @@ class ImageRestorer:
         )
         output_array[h] = temp_output_image
 
-        print("Finished single h param")
 
     def blur_borders(self, image, cluster_image):
         min_h_param = np.min(image)
@@ -286,7 +275,7 @@ class ImageRestorer:
         fh = ImageFileHandler()
         im_degrader = ImageDegrader()
         im = fh.open_image_file_as_matrix(file)
-        degraded_im = im_degrader.degrade(im, degradation_type=deg_type, severity_value=.25)
+        degraded_im = im_degrader.degrade(im, degradation_type=deg_type, severity_value=.5)
         restored_im, clustered_im, h_params = self.multiplicative_clustering_restore(degraded_im)
         restored_im_2 = self.fast_multiplicative_restore(degraded_im, h_param=np.mean(h_params), search_window_size=21)
         if save_images:
@@ -331,7 +320,6 @@ class ImageRestorer:
             restored_psnrs.append(comparison_func(im, restored_im))
             generic_psnrs.append(comparison_func(im, restored_generic_im))
             count += 1
-            print("{} out of {} complete".format(count, len(vars)))
         plt.plot(vars, restored_psnrs, "b", label="Clustering Restore")
         plt.plot(vars, degraded_psnrs, "r", label="Degraded Image")
         plt.plot(vars, generic_psnrs, "y", label="fastN1Means Restore")

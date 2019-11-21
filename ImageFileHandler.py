@@ -26,5 +26,8 @@ class ImageFileHandler:
         gray_im = self.rgb_to_gray(float_im)
         return gray_im
 
+    def resize_image(self, im, dims):
+        return dip.resize(im, dims)
+
     def save_matrix_as_image_file(self, matrix, image_path):
         dip.im_write(dip.float_to_im(matrix), image_path)
